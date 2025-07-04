@@ -337,7 +337,7 @@ const { color } = prev;
   return (
     <div className="relative select-none touch-none bg-[#121212] min-h-screen flex flex-col items-center text-white">
       <header className="w-full p-4 text-center text-2xl font-bold border-b border-gray-700 bg-[#181818]">
-        Ball Shooter
+        Ball Shooter 	&#40;Beta&#41;
       </header>
 
       {loading && (
