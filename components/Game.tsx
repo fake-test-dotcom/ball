@@ -371,13 +371,12 @@ const { color } = prev;
       />
 
       {!gameOver && !hasShotOnce && !win && !loading && (
-        <div
-          style={{ color: 'white', marginBottom: '200px' }}
-          className="mb-6 text-center text-gray-400 pointer-events-none select-none"
-        >
-          <p>Drag or swipe upward to aim and shoot</p>
-          <p className="text-sm">(Tap/click and drag then release)</p>
-        </div>
+       <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center pointer-events-none z-30">
+    <div className="text-center text-gray-300 bg-black bg-opacity-50 p-3 rounded-md">
+      <p className="text-lg font-medium">Drag or swipe upward to aim and shoot</p>
+      <p className="text-sm">(Tap/click and drag then release)</p>
+    </div>
+  </div>
       )}
 
       {gameOver && (
