@@ -9,23 +9,26 @@ interface Bubble {
   alpha: number;
 }
 
+type BubbleGrid = (Bubble | null)[][];
+
 const colors = ['#ff4d4d', '#4dff88', '#4da6ff', '#ffff4d', '#ff4dff'];
 
 export default function Game() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [bubbles, setBubbles] = useState<Bubble[][]>([]);
+  const [bubbles, setBubbles] = useState<BubbleGrid>([]);
   const [playerBubble, setPlayerBubble] = useState<Bubble | null>(null);
   const [nextBubble, setNextBubble] = useState<Bubble | null>(null);
   const [angle, setAngle] = useState(0);
   const [score, setScore] = useState(0);
   const [popCount, setPopCount] = useState(0); // ✅ track how many pops occurred
+
   const bubbleSize = 40;
   const rows = 9;
   const cols = 11;
 
   // ✅ initialize grid
   useEffect(() => {
-    const createLine = (yOffset: number) => {
+    const createLine = (yOffset: number): Bubble[] => {
       const line: Bubble[] = [];
       for (let c = 0; c < cols; c++) {
         const color = colors[Math.floor(Math.random() * colors.length)];
@@ -40,7 +43,7 @@ export default function Game() {
       return line;
     };
 
-    const newBubbles: Bubble[][] = [];
+    const newBubbles: BubbleGrid = [];
     for (let r = 0; r < rows; r++) {
       newBubbles.push(createLine(r * bubbleSize));
     }
@@ -65,7 +68,7 @@ export default function Game() {
     });
   }, []);
 
-  // ✅ Draw the bubbles
+  // ✅ Draw bubbles
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -76,6 +79,7 @@ export default function Game() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       bubbles.forEach(row => {
         row.forEach(b => {
+          if (!b) return;
           ctx.globalAlpha = b.alpha;
           ctx.beginPath();
           ctx.arc(b.x, b.y, (bubbleSize / 2) * b.scale, 0, Math.PI * 2);
@@ -122,7 +126,7 @@ export default function Game() {
     return () => clearInterval(interval);
   }, [bubbles, playerBubble, nextBubble]);
 
-  // ✅ Mouse angle
+  // ✅ Mouse angle tracker
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       const canvas = canvasRef.current;
@@ -139,7 +143,7 @@ export default function Game() {
   }, []);
 
   // ✅ find matches of same color
-  const findMatches = (grid: Bubble[][], row: number, col: number, color: string) => {
+  const findMatches = (grid: BubbleGrid, row: number, col: number, color: string) => {
     const visited = new Set<string>();
     const matches: [number, number][] = [];
 
@@ -147,7 +151,7 @@ export default function Game() {
       if (r < 0 || r >= grid.length || c < 0 || c >= grid[0].length) return;
       const key = `${r}-${c}`;
       if (visited.has(key)) return;
-      if (!grid[r][c] || grid[r][c].color !== color) return;
+      if (!grid[r][c] || grid[r][c]?.color !== color) return;
 
       visited.add(key);
       matches.push([r, c]);
@@ -161,8 +165,8 @@ export default function Game() {
     return matches;
   };
 
-  // ✅ handle popping animation
-  const animatePop = (grid: Bubble[][], matched: [number, number][]) => {
+  // ✅ popping animation
+  const animatePop = (grid: BubbleGrid, matched: [number, number][]) => {
     matched.forEach(([r, c]) => {
       const bubble = grid[r][c];
       if (!bubble) return;
@@ -172,7 +176,7 @@ export default function Game() {
         scale -= 0.1;
         if (scale <= 0) {
           clearInterval(shrink);
-          grid[r][c] = null as any;
+          grid[r][c] = null;
           setBubbles([...grid]);
         } else {
           bubble.scale = scale;
@@ -188,12 +192,9 @@ export default function Game() {
     if (!playerBubble) return;
 
     const speed = 10;
-    let { x, y, dx, dy } = {
-      x: playerBubble.x,
-      y: playerBubble.y,
-      dx: Math.cos(angle) * speed,
-      dy: Math.sin(angle) * speed,
-    };
+    let { x, y } = { x: playerBubble.x, y: playerBubble.y };
+    let dx = Math.cos(angle) * speed;
+    const dy = Math.sin(angle) * speed; // ✅ const instead of let
     const { color } = playerBubble;
 
     const move = () => {
@@ -208,17 +209,17 @@ export default function Game() {
         clearInterval(timer);
         const newRow = Math.floor(y / bubbleSize);
         const newCol = Math.floor(x / bubbleSize);
-        const newBubbles = [...bubbles];
+        const newBubbles = [...bubbles.map(row => [...row])] as BubbleGrid;
         newBubbles[newRow][newCol] = { x, y, color, scale: 1, alpha: 1 };
 
         const matches = findMatches(newBubbles, newRow, newCol, color);
         if (matches.length >= 3) {
           setScore(s => s + matches.length * 10);
-          setPopCount(p => p + 1); // ✅ track pops
+          setPopCount(p => p + 1);
           animatePop(newBubbles, matches);
 
           if (popCount + 1 >= 3) {
-            setTimeout(() => alert('🎉 You win!'), 300);
+            setTimeout(() => alert('🎉 You Win!'), 300);
           }
         } else {
           setBubbles(newBubbles);
@@ -249,16 +250,18 @@ export default function Game() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white">
+    <div className="game-container">
       <canvas
         ref={canvasRef}
         width={cols * bubbleSize}
         height={rows * bubbleSize + 150}
-        className="border-2 border-purple-500 rounded-lg"
+        className="game-canvas"
         onClick={shootBubble}
       />
-      <div className="mt-4 text-lg">Score: {score}</div>
-      <div className="text-sm opacity-70">Pops: {popCount}/3</div>
+      <div className="hud">
+        <div className="score">🏆 Score: {score}</div>
+        <div className="pops">💥 Pops: {popCount}/3</div>
+      </div>
     </div>
   );
 }
