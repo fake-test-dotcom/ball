@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Canvas from './Canvas';
 
 type Bubble = { x: number; y: number; color: string; popping?: boolean; scale?: number; alpha?: number };
-type Ball = { x: number; y: number; dx: number; dy: number; color: string };
+type Ball = { x: number; y: number; dx: number; dy: number; color: string; scale?: number; alpha?: number };
 
 export default function Game() {
   const [cw, setCw] = useState(360);
@@ -50,18 +50,18 @@ export default function Game() {
 
   const spawnBall = useCallback((): Ball => {
     const color = colors[Math.floor(Math.random() * colors.length)];
-    return { x: cw / 2, y: paddleY, dx: 0, dy: 0, color };
+    return { x: cw / 2, y: paddleY, dx: 0, dy: 0, color, scale: 1, alpha: 1 };
   }, [cw, paddleY, colors]);
 
   const [grid, setGrid] = useState<Bubble[]>(() => createLine(0));
   const [ball, setBall] = useState<Ball>(spawnBall());
   const [shot, setShot] = useState(false);
-  const [hasShotOnce, setHasShotOnce] = useState(false); // 👈 added
   const [gameOver, setGameOver] = useState(false);
   const [aimVec, setAimVec] = useState<{ x: number; y: number } | null>(null);
   const [, setPoppedCount] = useState(0);
   const [win, setWin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [hasShotOnce, setHasShotOnce] = useState(false);
 
   const dragging = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -125,13 +125,12 @@ export default function Game() {
     setBall((b) => ({ ...b, dx: x, dy: y }));
     setShot(true);
     setAimVec(null);
-    setHasShotOnce(true); // 👈 hide hint after first shot
+    setHasShotOnce(true);
   };
 
   const drawBubble = useCallback(
     (ctx: CanvasRenderingContext2D, x: number, y: number, color: string, scale = 1, alpha = 1) => {
       const radius = (bubbleSize / 2 - 2) * scale;
-
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.shadowColor = color;
@@ -196,7 +195,7 @@ export default function Game() {
     [bubbleSize]
   );
 
-  // 🎯 Ball movement + collision
+  // 🎯 Ball movement + collision + ball pop animation
   useEffect(() => {
     if (!shot) return;
     let animationFrameId: number;
@@ -222,55 +221,69 @@ export default function Game() {
         }
 
         if (collisionIndex >= 0) {
-          const snapX =
-            Math.round((x - bubbleSize / 2) / bubbleSize) * bubbleSize + bubbleSize / 2;
-          const snapY =
-            Math.round((y - bubbleSize / 2) / bubbleSize) * bubbleSize + bubbleSize / 2;
+          const snapX = Math.round((x - bubbleSize / 2) / bubbleSize) * bubbleSize + bubbleSize / 2;
+          const snapY = Math.round((y - bubbleSize / 2) / bubbleSize) * bubbleSize + bubbleSize / 2;
           const newBubble: Bubble = { x: snapX, y: snapY, color, scale: 1, alpha: 1 };
           const tempGrid = [...grid, newBubble];
           const idxNew = tempGrid.length - 1;
           const matched = findMatchingNeighbors(tempGrid, idxNew, color);
 
           if (matched.size >= 3) {
+            // 🎆 POP bubbles + ball pop
             setGrid((old) =>
               old.map((b, i) =>
-                matched.has(i)
-                  ? { ...b, popping: true, scale: 1, alpha: 1 }
-                  : b
+                matched.has(i) ? { ...b, popping: true, scale: 1, alpha: 1 } : b
               )
             );
 
+            // animate popping effect for ball
+            setBall((b) => ({ ...b, scale: 1, alpha: 1 }));
             let start: number | null = null;
+
             const animatePop = (timestamp: number) => {
               if (!start) start = timestamp;
               const progress = (timestamp - start) / 300;
+              const scale = Math.max(0, 1 - progress);
+              const alpha = Math.max(0, 1 - progress);
+              setBall((b) => ({ ...b, scale, alpha }));
               setGrid((g) =>
                 g
-                  .map((b, i) => {
-                    if (!matched.has(i)) return b;
-                    const scale = Math.max(0, 1 - progress);
-                    const alpha = Math.max(0, 1 - progress);
-                    return { ...b, scale, alpha };
-                  })
+                  .map((b, i) =>
+                    matched.has(i)
+                      ? { ...b, scale, alpha }
+                      : b
+                  )
                   .filter((b) => b.alpha! > 0)
               );
+              if (progress < 1) requestAnimationFrame(animatePop);
+              else {
+                setPoppedCount((pc) => {
+                  const newCount = pc + matched.size;
+                  if (newCount >= 20) setWin(true);
+                  return newCount;
+                });
+                setShot(false);
+                setBall(spawnBall());
+              }
             };
             requestAnimationFrame(animatePop);
           } else {
             setGrid((old) => [...old, newBubble]);
+            setShot(false);
+            setBall(spawnBall());
           }
 
           if (grid.some((b) => b.y + bubbleSize / 2 >= paddleY)) setGameOver(true);
-          setShot(false);
-          return spawnBall();
+          return prev;
         }
 
         if (y > ch + bubbleSize) {
           setShot(false);
-          return spawnBall();
+          setBall(spawnBall());
+          return prev;
         }
 
-        return { x, y, dx, dy, color };
+        return { x, y, dx, dy, color, scale: prev.scale, alpha: prev.alpha };
       });
 
       animationFrameId = requestAnimationFrame(moveBall);
@@ -290,28 +303,28 @@ export default function Game() {
 
       grid.forEach((b) => drawBubble(ctx, b.x, b.y, b.color, b.scale, b.alpha));
       if (!shot && aimVec) drawAimLine(ctx);
-      drawBubble(ctx, ball.x, ball.y, ball.color);
+      if (ball.alpha! > 0) drawBubble(ctx, ball.x, ball.y, ball.color, ball.scale, ball.alpha);
     },
     [grid, drawBubble, ball, aimVec, shot, drawAimLine, cw, ch]
   );
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const reset = () => {
     setGrid(createLine(0));
     setBall(spawnBall());
     setShot(false);
-    setHasShotOnce(false); // 👈 reset hint visibility
     setGameOver(false);
     setPoppedCount(0);
     setWin(false);
     setAimVec(null);
+    setHasShotOnce(false);
   };
 
   return (
     <div
       className="relative flex flex-col items-center justify-center min-h-screen text-white overflow-hidden"
       style={{
-        background:
-          'linear-gradient(270deg, #ff0000, #00ff00, #0000ff, #ff00ff)',
+        background: 'linear-gradient(270deg, #ff0000, #00ff00, #0000ff, #ff00ff)',
         backgroundSize: '800% 800%',
         animation: 'rgbShift 15s ease infinite',
       }}
@@ -325,7 +338,7 @@ export default function Game() {
       `}</style>
 
       <header className="w-full py-4 text-center text-2xl sm:text-3xl font-bold bg-gradient-to-r from-purple-600 via-blue-600 to-pink-500 shadow-lg">
-        🎮 Ball One <span className="text-sm">(v3.1)</span>
+        🎮 Ball One <span className="text-sm">(v3.2)</span>
       </header>
 
       {loading && (
@@ -351,7 +364,6 @@ export default function Game() {
         style={{ touchAction: 'none' }}
       />
 
-      {/* 👇 Hide aim hint after first shot */}
       {!gameOver && !win && !loading && !hasShotOnce && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="bg-black/60 px-5 py-3 rounded-lg text-center animate-pulse">
@@ -366,14 +378,12 @@ export default function Game() {
       {(gameOver || win) && (
         <div className="absolute inset-0 flex flex-col justify-center items-center bg-black/80 backdrop-blur-md z-40">
           <h2
-            className={`text-4xl font-bold mb-5 ${
-              win ? 'text-green-400' : 'text-red-400'
-            }`}
+            className={`text-4xl font-bold mb-5 ${win ? 'text-green-400' : 'text-red-400'}`}
           >
             {win ? '🎉 You Win!' : '💀 Game Over'}
           </h2>
           <button
-            onClick={reset}
+            onClick={() => reset()}
             className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full text-white font-semibold hover:scale-105 transition-transform"
           >
             Restart
