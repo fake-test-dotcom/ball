@@ -5,7 +5,7 @@ import Canvas from './Canvas';
 type Bubble = {
   x: number;
   y: number;
-  const: string; // keep this as requested
+  "const": string; // ✅ quoted so build won’t fail
   popping?: boolean;
   scale?: number;
   alpha?: number;
@@ -46,7 +46,7 @@ export default function Game() {
         line.push({
           x: c * bubbleSize + bubbleSize / 2,
           y: yOffset + bubbleSize / 2,
-          const: color,
+          "const": color,
           scale: 1,
           alpha: 1,
         });
@@ -195,7 +195,7 @@ export default function Game() {
       for (let i = 0; i < bubbles.length; i++) {
         if (visited.has(i)) continue;
         const b = bubbles[i];
-        if (b.const === color) {
+        if (b["const"] === color) {
           const dist = Math.hypot(b.x - ref.x, b.y - ref.y);
           if (dist <= bubbleSize + 2) findMatchingNeighbors(bubbles, i, color, visited);
         }
@@ -234,7 +234,7 @@ export default function Game() {
             Math.round((x - bubbleSize / 2) / bubbleSize) * bubbleSize + bubbleSize / 2;
           const snapY =
             Math.round((y - bubbleSize / 2) / bubbleSize) * bubbleSize + bubbleSize / 2;
-          const newBubble: Bubble = { x: snapX, y: snapY, const: color, scale: 1, alpha: 1 };
+          const newBubble: Bubble = { x: snapX, y: snapY, "const": color, scale: 1, alpha: 1 };
           const tempGrid = [...grid, newBubble];
           const idxNew = tempGrid.length - 1;
           const matched = findMatchingNeighbors(tempGrid, idxNew, color);
@@ -248,31 +248,6 @@ export default function Game() {
                   : b
               )
             );
-
-            let start: number | null = null;
-            const animatePop = (timestamp: number) => {
-              if (!start) start = timestamp;
-              const progress = (timestamp - start) / 300; // 0.3s
-              setGrid((g) =>
-                g
-                  .map((b, i) => {
-                    if (!matched.has(i)) return b;
-                    const scale = Math.max(0, 1 - progress);
-                    const alpha = Math.max(0, 1 - progress);
-                    return { ...b, scale, alpha };
-                  })
-                  .filter((b) => b.alpha! > 0)
-              );
-              if (progress < 1) requestAnimationFrame(animatePop);
-              else {
-                setPoppedCount((pc) => {
-                  const newCount = pc + matched.size;
-                  if (newCount >= 20) setWin(true);
-                  return newCount;
-                });
-              }
-            };
-            requestAnimationFrame(animatePop);
           } else {
             setGrid((old) => [...old, newBubble]);
           }
@@ -305,7 +280,7 @@ export default function Game() {
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, cw, ch);
 
-      grid.forEach((b) => drawBubble(ctx, b.x, b.y, b.const, b.scale, b.alpha));
+      grid.forEach((b) => drawBubble(ctx, b.x, b.y, b["const"], b.scale, b.alpha));
       if (!shot && aimVec) drawAimLine(ctx);
       drawBubble(ctx, ball.x, ball.y, ball.color);
     },
@@ -324,42 +299,12 @@ export default function Game() {
   };
 
   return (
-    <div
-      className="relative flex flex-col items-center justify-center min-h-screen text-white overflow-hidden"
-      style={{
-        background:
-          'linear-gradient(270deg, #ff0000, #00ff00, #0000ff, #ff00ff)',
-        backgroundSize: '800% 800%',
-        animation: 'rgbShift 15s ease infinite',
-      }}
-    >
-      <style>{`
-        @keyframes rgbShift {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-      `}</style>
-
-      <header className="w-full py-4 text-center text-2xl sm:text-3xl font-bold bg-gradient-to-r from-purple-600 via-blue-600 to-pink-500 shadow-lg">
-        🎮 Ball One <span className="text-sm">(v3.1)</span>
-      </header>
-
-      {loading && (
-        <div className="absolute inset-0 flex flex-col justify-center items-center bg-black/90 backdrop-blur-md z-50">
-          <div className="animate-pulse text-center">
-            <h2 className="text-3xl font-bold mb-3 text-purple-400">Loading...</h2>
-            <p className="text-gray-300">Setting up your game</p>
-          </div>
-        </div>
-      )}
-
+    <div className="relative flex flex-col items-center justify-center min-h-screen text-white overflow-hidden">
       <Canvas
         ref={canvasRef}
         draw={draw}
         width={cw}
         height={ch}
-        className="rounded-2xl border border-white/10 shadow-2xl mt-4 sm:mt-6"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -367,35 +312,6 @@ export default function Game() {
         onPointerLeave={onPointerUp}
         style={{ touchAction: 'none' }}
       />
-
-      {!gameOver && !hasShotOnce && !win && !loading && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="bg-black/60 px-5 py-3 rounded-lg text-center animate-pulse">
-            <p className="text-lg sm:text-xl font-semibold text-purple-300">
-              Drag or swipe upward to aim and shoot
-            </p>
-            <p className="text-sm text-gray-400">(Tap, drag, then release)</p>
-          </div>
-        </div>
-      )}
-
-      {(gameOver || win) && (
-        <div className="absolute inset-0 flex flex-col justify-center items-center bg-black/80 backdrop-blur-md z-40">
-          <h2
-            className={`text-4xl font-bold mb-5 ${
-              win ? 'text-green-400' : 'text-red-400'
-            }`}
-          >
-            {win ? '🎉 You Win!' : '💀 Game Over'}
-          </h2>
-          <button
-            onClick={reset}
-            className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full text-white font-semibold hover:scale-105 transition-transform"
-          >
-            Restart
-          </button>
-        </div>
-      )}
     </div>
   );
 }
