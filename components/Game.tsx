@@ -1,37 +1,31 @@
 'use client';
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import Canvas from './Canvas';
+import React, { useEffect, useRef, useState } from 'react';
 
-type Bubble = { x: number; y: number; color: string; popping?: boolean; scale?: number; alpha?: number };
-type Ball = { x: number; y: number; dx: number; dy: number; color: string; scale?: number; alpha?: number };
+interface Bubble {
+  x: number;
+  y: number;
+  color: string;
+  scale: number;
+  alpha: number;
+}
+
+const colors = ['#ff4d4d', '#4dff88', '#4da6ff', '#ffff4d', '#ff4dff'];
 
 export default function Game() {
-  const [cw, setCw] = useState(360);
-  const [ch, setCh] = useState(600);
-
-  useEffect(() => {
-    const handleResize = () => {
-      const width = Math.min(window.innerWidth * 0.9, 400);
-      const height = width * 1.6;
-      setCw(width);
-      setCh(height);
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [bubbles, setBubbles] = useState<Bubble[][]>([]);
+  const [playerBubble, setPlayerBubble] = useState<Bubble | null>(null);
+  const [nextBubble, setNextBubble] = useState<Bubble | null>(null);
+  const [angle, setAngle] = useState(0);
+  const [score, setScore] = useState(0);
+  const [popCount, setPopCount] = useState(0); // ✅ track how many pops occurred
   const bubbleSize = 40;
-  const cols = Math.floor(cw / bubbleSize);
-  const paddleY = ch - bubbleSize * 1.4;
+  const rows = 9;
+  const cols = 11;
 
-  const colors = useMemo(
-    () => ['#00FFFF', '#FF00FF', '#FFD700', '#00FF7F', '#FF4500', '#1E90FF'],
-    []
-  );
-
-  const createLine = useCallback(
-    (yOffset: number): Bubble[] => {
+  // ✅ initialize grid
+  useEffect(() => {
+    const createLine = (yOffset: number) => {
       const line: Bubble[] = [];
       for (let c = 0; c < cols; c++) {
         const color = colors[Math.floor(Math.random() * colors.length)];
@@ -44,352 +38,227 @@ export default function Game() {
         });
       }
       return line;
-    },
-    [cols, bubbleSize, colors]
-  );
-
-  const spawnBall = useCallback((): Ball => {
-    const color = colors[Math.floor(Math.random() * colors.length)];
-    return { x: cw / 2, y: paddleY, dx: 0, dy: 0, color, scale: 1, alpha: 1 };
-  }, [cw, paddleY, colors]);
-
-  const [grid, setGrid] = useState<Bubble[]>(() => createLine(0));
-  const [ball, setBall] = useState<Ball>(spawnBall());
-  const [shot, setShot] = useState(false);
-  const [gameOver, setGameOver] = useState(false);
-  const [aimVec, setAimVec] = useState<{ x: number; y: number } | null>(null);
-  const [, setPoppedCount] = useState(0);
-  const [win, setWin] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [hasShotOnce, setHasShotOnce] = useState(false);
-
-  const dragging = useRef(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 1500);
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    if (gameOver || win || loading) return;
-    const interval = setInterval(() => {
-      setGrid((g) => {
-        const moved = g.map((b) => ({ ...b, y: b.y + bubbleSize }));
-        const newLine = createLine(0);
-        const updated = [...newLine, ...moved];
-        if (updated.some((b) => b.y + bubbleSize / 2 >= paddleY)) setGameOver(true);
-        return updated;
-      });
-    }, 6000);
-    return () => clearInterval(interval);
-  }, [gameOver, win, loading, createLine, bubbleSize, paddleY]);
-
-  const getCoords = (e: React.PointerEvent) => {
-    const rect = canvasRef.current!.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-  };
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (shot || gameOver || win || loading) return;
-    dragging.current = true;
-    const { x, y } = getCoords(e);
-    setAimVec({ x: x - ball.x, y: y - ball.y });
-  };
-
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragging.current) return;
-    const { x, y } = getCoords(e);
-    const dx = x - ball.x;
-    const dy = y - ball.y;
-    if (dy > 0) return;
-    setAimVec({ x: dx, y: dy });
-  };
-
-  const onPointerUp = () => {
-    if (!dragging.current || !aimVec || shot || gameOver || win || loading) {
-      dragging.current = false;
-      setAimVec(null);
-      return;
-    }
-    dragging.current = false;
-    let { x, y } = aimVec;
-    const len = Math.hypot(x, y);
-    if (len === 0) {
-      setAimVec(null);
-      return;
-    }
-    const speed = 6;
-    x = (x / len) * speed;
-    y = (y / len) * speed;
-    setBall((b) => ({ ...b, dx: x, dy: y }));
-    setShot(true);
-    setAimVec(null);
-    setHasShotOnce(true);
-  };
-
-  const drawBubble = useCallback(
-    (ctx: CanvasRenderingContext2D, x: number, y: number, color: string, scale = 1, alpha = 1) => {
-      const radius = (bubbleSize / 2 - 2) * scale;
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 20;
-
-      const gradient = ctx.createRadialGradient(
-        x - radius / 3,
-        y - radius / 3,
-        radius / 5,
-        x,
-        y,
-        radius
-      );
-      gradient.addColorStop(0, 'white');
-      gradient.addColorStop(0.25, color);
-      gradient.addColorStop(1, '#000');
-
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fillStyle = gradient;
-      ctx.fill();
-      ctx.strokeStyle = 'white';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.closePath();
-
-      ctx.restore();
-    },
-    [bubbleSize]
-  );
-
-  const drawAimLine = useCallback(
-    (ctx: CanvasRenderingContext2D) => {
-      if (!aimVec) return;
-      const { x, y } = aimVec;
-      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-      ctx.lineWidth = 3;
-      ctx.setLineDash([10, 10]);
-      ctx.beginPath();
-      ctx.moveTo(ball.x, ball.y);
-      ctx.lineTo(ball.x + x, ball.y + y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    },
-    [aimVec, ball]
-  );
-
-  const findMatchingNeighbors = useCallback(
-    (bubbles: Bubble[], index: number, color: string, visited = new Set<number>()) => {
-      visited.add(index);
-      const ref = bubbles[index];
-      for (let i = 0; i < bubbles.length; i++) {
-        if (visited.has(i)) continue;
-        const b = bubbles[i];
-        if (b.color === color) {
-          const dist = Math.hypot(b.x - ref.x, b.y - ref.y);
-          if (dist <= bubbleSize + 2) findMatchingNeighbors(bubbles, i, color, visited);
-        }
-      }
-      return visited;
-    },
-    [bubbleSize]
-  );
-
-  // 🎯 Ball movement + collision + ball pop animation
-  useEffect(() => {
-    if (!shot) return;
-    let animationFrameId: number;
-
-    const moveBall = () => {
-      setBall((prev) => {
-        let { x, y, dx, dy } = prev;
-        const { color } = prev;
-        x += dx;
-        y += dy;
-
-        if (x < bubbleSize / 2 || x > cw - bubbleSize / 2) dx = -dx;
-        if (y < bubbleSize / 2) dy = -dy;
-
-        let collisionIndex = -1;
-        for (let i = 0; i < grid.length; i++) {
-          const b = grid[i];
-          const dist = Math.hypot(b.x - x, b.y - y);
-          if (dist < bubbleSize - 2) {
-            collisionIndex = i;
-            break;
-          }
-        }
-
-        if (collisionIndex >= 0) {
-          const snapX = Math.round((x - bubbleSize / 2) / bubbleSize) * bubbleSize + bubbleSize / 2;
-          const snapY = Math.round((y - bubbleSize / 2) / bubbleSize) * bubbleSize + bubbleSize / 2;
-          const newBubble: Bubble = { x: snapX, y: snapY, color, scale: 1, alpha: 1 };
-          const tempGrid = [...grid, newBubble];
-          const idxNew = tempGrid.length - 1;
-          const matched = findMatchingNeighbors(tempGrid, idxNew, color);
-
-          if (matched.size >= 3) {
-            // 🎆 POP bubbles + ball pop
-            setGrid((old) =>
-              old.map((b, i) =>
-                matched.has(i) ? { ...b, popping: true, scale: 1, alpha: 1 } : b
-              )
-            );
-
-            // animate popping effect for ball
-            setBall((b) => ({ ...b, scale: 1, alpha: 1 }));
-            let start: number | null = null;
-
-            const animatePop = (timestamp: number) => {
-              if (!start) start = timestamp;
-              const progress = (timestamp - start) / 300;
-              const scale = Math.max(0, 1 - progress);
-              const alpha = Math.max(0, 1 - progress);
-              setBall((b) => ({ ...b, scale, alpha }));
-              setGrid((g) =>
-                g
-                  .map((b, i) =>
-                    matched.has(i)
-                      ? { ...b, scale, alpha }
-                      : b
-                  )
-                  .filter((b) => b.alpha! > 0)
-              );
-              if (progress < 1) requestAnimationFrame(animatePop);
-              else {
-                setPoppedCount((pc) => {
-                  const newCount = pc + matched.size;
-                  if (newCount >= 20) setWin(true);
-                  return newCount;
-                });
-                setShot(false);
-                setBall(spawnBall());
-              }
-            };
-            requestAnimationFrame(animatePop);
-          } else {
-            setGrid((old) => [...old, newBubble]);
-            setShot(false);
-            setBall(spawnBall());
-          }
-
-          if (grid.some((b) => b.y + bubbleSize / 2 >= paddleY)) setGameOver(true);
-          return prev;
-        }
-
-        if (y > ch + bubbleSize) {
-          setShot(false);
-          setBall(spawnBall());
-          return prev;
-        }
-
-        return { x, y, dx, dy, color, scale: prev.scale, alpha: prev.alpha };
-      });
-
-      animationFrameId = requestAnimationFrame(moveBall);
     };
 
-    animationFrameId = requestAnimationFrame(moveBall);
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [shot, grid, cw, ch, bubbleSize, findMatchingNeighbors, spawnBall, paddleY]);
+    const newBubbles: Bubble[][] = [];
+    for (let r = 0; r < rows; r++) {
+      newBubbles.push(createLine(r * bubbleSize));
+    }
+    setBubbles(newBubbles);
 
-  const draw = useCallback(
-    (ctx: CanvasRenderingContext2D) => {
-      const gradient = ctx.createLinearGradient(0, 0, 0, ch);
-      gradient.addColorStop(0, '#0a0a0a');
-      gradient.addColorStop(1, '#1a1a1a');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, cw, ch);
+    const startColor = colors[Math.floor(Math.random() * colors.length)];
+    setPlayerBubble({
+      x: (cols / 2) * bubbleSize,
+      y: rows * bubbleSize + 50,
+      color: startColor,
+      scale: 1,
+      alpha: 1,
+    });
 
-      grid.forEach((b) => drawBubble(ctx, b.x, b.y, b.color, b.scale, b.alpha));
-      if (!shot && aimVec) drawAimLine(ctx);
-      if (ball.alpha! > 0) drawBubble(ctx, ball.x, ball.y, ball.color, ball.scale, ball.alpha);
-    },
-    [grid, drawBubble, ball, aimVec, shot, drawAimLine, cw, ch]
-  );
+    const nextColor = colors[Math.floor(Math.random() * colors.length)];
+    setNextBubble({
+      x: (cols / 2) * bubbleSize + 100,
+      y: rows * bubbleSize + 50,
+      color: nextColor,
+      scale: 1,
+      alpha: 1,
+    });
+  }, []);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const reset = () => {
-    setGrid(createLine(0));
-    setBall(spawnBall());
-    setShot(false);
-    setGameOver(false);
-    setPoppedCount(0);
-    setWin(false);
-    setAimVec(null);
-    setHasShotOnce(false);
+  // ✅ Draw the bubbles
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      bubbles.forEach(row => {
+        row.forEach(b => {
+          ctx.globalAlpha = b.alpha;
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, (bubbleSize / 2) * b.scale, 0, Math.PI * 2);
+          ctx.fillStyle = b.color;
+          ctx.fill();
+          ctx.closePath();
+        });
+      });
+
+      // player bubble
+      if (playerBubble) {
+        ctx.globalAlpha = playerBubble.alpha;
+        ctx.beginPath();
+        ctx.arc(
+          playerBubble.x,
+          playerBubble.y,
+          (bubbleSize / 2) * playerBubble.scale,
+          0,
+          Math.PI * 2
+        );
+        ctx.fillStyle = playerBubble.color;
+        ctx.fill();
+        ctx.closePath();
+      }
+
+      // next bubble preview
+      if (nextBubble) {
+        ctx.globalAlpha = 0.7;
+        ctx.beginPath();
+        ctx.arc(
+          nextBubble.x,
+          nextBubble.y,
+          (bubbleSize / 2) * nextBubble.scale * 0.8,
+          0,
+          Math.PI * 2
+        );
+        ctx.fillStyle = nextBubble.color;
+        ctx.fill();
+        ctx.closePath();
+      }
+    };
+
+    const interval = setInterval(draw, 30);
+    return () => clearInterval(interval);
+  }, [bubbles, playerBubble, nextBubble]);
+
+  // ✅ Mouse angle
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const dx = mouseX - (cols / 2) * bubbleSize;
+      const dy = mouseY - (rows * bubbleSize + 50);
+      setAngle(Math.atan2(dy, dx));
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
+  // ✅ find matches of same color
+  const findMatches = (grid: Bubble[][], row: number, col: number, color: string) => {
+    const visited = new Set<string>();
+    const matches: [number, number][] = [];
+
+    const dfs = (r: number, c: number) => {
+      if (r < 0 || r >= grid.length || c < 0 || c >= grid[0].length) return;
+      const key = `${r}-${c}`;
+      if (visited.has(key)) return;
+      if (!grid[r][c] || grid[r][c].color !== color) return;
+
+      visited.add(key);
+      matches.push([r, c]);
+      dfs(r - 1, c);
+      dfs(r + 1, c);
+      dfs(r, c - 1);
+      dfs(r, c + 1);
+    };
+
+    dfs(row, col);
+    return matches;
+  };
+
+  // ✅ handle popping animation
+  const animatePop = (grid: Bubble[][], matched: [number, number][]) => {
+    matched.forEach(([r, c]) => {
+      const bubble = grid[r][c];
+      if (!bubble) return;
+
+      let scale = 1;
+      const shrink = setInterval(() => {
+        scale -= 0.1;
+        if (scale <= 0) {
+          clearInterval(shrink);
+          grid[r][c] = null as any;
+          setBubbles([...grid]);
+        } else {
+          bubble.scale = scale;
+          bubble.alpha = scale;
+          setBubbles([...grid]);
+        }
+      }, 30);
+    });
+  };
+
+  // ✅ shooting logic
+  const shootBubble = () => {
+    if (!playerBubble) return;
+
+    const speed = 10;
+    let { x, y, dx, dy } = {
+      x: playerBubble.x,
+      y: playerBubble.y,
+      dx: Math.cos(angle) * speed,
+      dy: Math.sin(angle) * speed,
+    };
+    const { color } = playerBubble;
+
+    const move = () => {
+      x += dx;
+      y += dy;
+
+      if (x <= bubbleSize / 2 || x >= cols * bubbleSize - bubbleSize / 2) {
+        dx = -dx;
+      }
+
+      if (y <= bubbleSize / 2) {
+        clearInterval(timer);
+        const newRow = Math.floor(y / bubbleSize);
+        const newCol = Math.floor(x / bubbleSize);
+        const newBubbles = [...bubbles];
+        newBubbles[newRow][newCol] = { x, y, color, scale: 1, alpha: 1 };
+
+        const matches = findMatches(newBubbles, newRow, newCol, color);
+        if (matches.length >= 3) {
+          setScore(s => s + matches.length * 10);
+          setPopCount(p => p + 1); // ✅ track pops
+          animatePop(newBubbles, matches);
+
+          if (popCount + 1 >= 3) {
+            setTimeout(() => alert('🎉 You win!'), 300);
+          }
+        } else {
+          setBubbles(newBubbles);
+        }
+
+        setPlayerBubble({
+          x: (cols / 2) * bubbleSize,
+          y: rows * bubbleSize + 50,
+          color: nextBubble?.color || colors[Math.floor(Math.random() * colors.length)],
+          scale: 1,
+          alpha: 1,
+        });
+
+        const nextColor = colors[Math.floor(Math.random() * colors.length)];
+        setNextBubble({
+          x: (cols / 2) * bubbleSize + 100,
+          y: rows * bubbleSize + 50,
+          color: nextColor,
+          scale: 1,
+          alpha: 1,
+        });
+      } else {
+        setPlayerBubble(prev => prev && { ...prev, x, y });
+      }
+    };
+
+    const timer = setInterval(move, 20);
   };
 
   return (
-    <div
-      className="relative flex flex-col items-center justify-center min-h-screen text-white overflow-hidden"
-      style={{
-        background: 'linear-gradient(270deg, #ff0000, #00ff00, #0000ff, #ff00ff)',
-        backgroundSize: '800% 800%',
-        animation: 'rgbShift 15s ease infinite',
-      }}
-    >
-      <style>{`
-        @keyframes rgbShift {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-      `}</style>
-
-      <header className="w-full py-4 text-center text-2xl sm:text-3xl font-bold bg-gradient-to-r from-purple-600 via-blue-600 to-pink-500 shadow-lg">
-        🎮 Ball One <span className="text-sm">(v3.2)</span>
-      </header>
-
-      {loading && (
-        <div className="absolute inset-0 flex flex-col justify-center items-center bg-black/90 backdrop-blur-md z-50">
-          <div className="animate-pulse text-center">
-            <h2 className="text-3xl font-bold mb-3 text-purple-400">Loading...</h2>
-            <p className="text-gray-300">Setting up your game</p>
-          </div>
-        </div>
-      )}
-
-      <Canvas
+    <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white">
+      <canvas
         ref={canvasRef}
-        draw={draw}
-        width={cw}
-        height={ch}
-        className="rounded-2xl border border-white/10 shadow-2xl mt-4 sm:mt-6"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        onPointerLeave={onPointerUp}
-        style={{ touchAction: 'none' }}
+        width={cols * bubbleSize}
+        height={rows * bubbleSize + 150}
+        className="border-2 border-purple-500 rounded-lg"
+        onClick={shootBubble}
       />
-
-      {!gameOver && !win && !loading && !hasShotOnce && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="bg-black/60 px-5 py-3 rounded-lg text-center animate-pulse">
-            <p className="text-lg sm:text-xl font-semibold text-purple-300">
-              Drag or swipe upward to aim and shoot
-            </p>
-            <p className="text-sm text-gray-400">(Tap, drag, then release)</p>
-          </div>
-        </div>
-      )}
-
-      {(gameOver || win) && (
-        <div className="absolute inset-0 flex flex-col justify-center items-center bg-black/80 backdrop-blur-md z-40">
-          <h2
-            className={`text-4xl font-bold mb-5 ${win ? 'text-green-400' : 'text-red-400'}`}
-          >
-            {win ? '🎉 You Win!' : '💀 Game Over'}
-          </h2>
-          <button
-            onClick={() => reset()}
-            className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full text-white font-semibold hover:scale-105 transition-transform"
-          >
-            Restart
-          </button>
-        </div>
-      )}
+      <div className="mt-4 text-lg">Score: {score}</div>
+      <div className="text-sm opacity-70">Pops: {popCount}/3</div>
     </div>
   );
 }
