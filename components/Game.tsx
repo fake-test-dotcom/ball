@@ -201,7 +201,8 @@ export default function Game() {
 
     const moveBall = () => {
       setBall((prev) => {
-        let { x, y, dx, dy, color } = prev;
+let { x, y, dx, dy } = prev;
+const { color } = prev;
         x += dx;
         y += dy;
 
