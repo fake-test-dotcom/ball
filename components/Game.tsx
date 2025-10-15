@@ -5,11 +5,12 @@ import Canvas from './Canvas';
 type Bubble = {
   x: number;
   y: number;
-  color: string;
+  const: string; // keep this as requested
   popping?: boolean;
   scale?: number;
   alpha?: number;
 };
+
 type Ball = { x: number; y: number; dx: number; dy: number; color: string };
 
 export default function Game() {
@@ -45,7 +46,7 @@ export default function Game() {
         line.push({
           x: c * bubbleSize + bubbleSize / 2,
           y: yOffset + bubbleSize / 2,
-          color,
+          const: color,
           scale: 1,
           alpha: 1,
         });
@@ -194,7 +195,7 @@ export default function Game() {
       for (let i = 0; i < bubbles.length; i++) {
         if (visited.has(i)) continue;
         const b = bubbles[i];
-        if (b.color === color) {
+        if (b.const === color) {
           const dist = Math.hypot(b.x - ref.x, b.y - ref.y);
           if (dist <= bubbleSize + 2) findMatchingNeighbors(bubbles, i, color, visited);
         }
@@ -233,7 +234,7 @@ export default function Game() {
             Math.round((x - bubbleSize / 2) / bubbleSize) * bubbleSize + bubbleSize / 2;
           const snapY =
             Math.round((y - bubbleSize / 2) / bubbleSize) * bubbleSize + bubbleSize / 2;
-          const newBubble: Bubble = { x: snapX, y: snapY, color, scale: 1, alpha: 1 };
+          const newBubble: Bubble = { x: snapX, y: snapY, const: color, scale: 1, alpha: 1 };
           const tempGrid = [...grid, newBubble];
           const idxNew = tempGrid.length - 1;
           const matched = findMatchingNeighbors(tempGrid, idxNew, color);
@@ -304,7 +305,7 @@ export default function Game() {
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, cw, ch);
 
-      grid.forEach((b) => drawBubble(ctx, b.x, b.y, b.color, b.scale, b.alpha));
+      grid.forEach((b) => drawBubble(ctx, b.x, b.y, b.const, b.scale, b.alpha));
       if (!shot && aimVec) drawAimLine(ctx);
       drawBubble(ctx, ball.x, ball.y, ball.color);
     },
