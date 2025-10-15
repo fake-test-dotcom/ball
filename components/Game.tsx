@@ -56,6 +56,7 @@ export default function Game() {
   const [grid, setGrid] = useState<Bubble[]>(() => createLine(0));
   const [ball, setBall] = useState<Ball>(spawnBall());
   const [shot, setShot] = useState(false);
+  const [hasShotOnce, setHasShotOnce] = useState(false); // 👈 added
   const [gameOver, setGameOver] = useState(false);
   const [aimVec, setAimVec] = useState<{ x: number; y: number } | null>(null);
   const [, setPoppedCount] = useState(0);
@@ -124,6 +125,7 @@ export default function Game() {
     setBall((b) => ({ ...b, dx: x, dy: y }));
     setShot(true);
     setAimVec(null);
+    setHasShotOnce(true); // 👈 hide hint after first shot
   };
 
   const drawBubble = useCallback(
@@ -201,8 +203,8 @@ export default function Game() {
 
     const moveBall = () => {
       setBall((prev) => {
-let { x, y, dx, dy } = prev;
-const { color } = prev;
+        let { x, y, dx, dy } = prev;
+        const { color } = prev;
         x += dx;
         y += dy;
 
@@ -230,7 +232,6 @@ const { color } = prev;
           const matched = findMatchingNeighbors(tempGrid, idxNew, color);
 
           if (matched.size >= 3) {
-            // 🎆 POP animation
             setGrid((old) =>
               old.map((b, i) =>
                 matched.has(i)
@@ -253,14 +254,6 @@ const { color } = prev;
                   })
                   .filter((b) => b.alpha! > 0)
               );
-              if (progress < 1) requestAnimationFrame(animatePop);
-              else {
-                setPoppedCount((pc) => {
-                  const newCount = pc + matched.size;
-                  if (newCount >= 20) setWin(true);
-                  return newCount;
-                });
-              }
             };
             requestAnimationFrame(animatePop);
           } else {
@@ -302,12 +295,11 @@ const { color } = prev;
     [grid, drawBubble, ball, aimVec, shot, drawAimLine, cw, ch]
   );
 
-  // ✅ fix: keep reset but silence eslint unused warning
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const reset = () => {
     setGrid(createLine(0));
     setBall(spawnBall());
     setShot(false);
+    setHasShotOnce(false); // 👈 reset hint visibility
     setGameOver(false);
     setPoppedCount(0);
     setWin(false);
@@ -359,7 +351,8 @@ const { color } = prev;
         style={{ touchAction: 'none' }}
       />
 
-      {!gameOver && !win && !loading && (
+      {/* 👇 Hide aim hint after first shot */}
+      {!gameOver && !win && !loading && !hasShotOnce && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="bg-black/60 px-5 py-3 rounded-lg text-center animate-pulse">
             <p className="text-lg sm:text-xl font-semibold text-purple-300">
@@ -380,7 +373,7 @@ const { color } = prev;
             {win ? '🎉 You Win!' : '💀 Game Over'}
           </h2>
           <button
-            onClick={() => reset()}
+            onClick={reset}
             className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full text-white font-semibold hover:scale-105 transition-transform"
           >
             Restart
